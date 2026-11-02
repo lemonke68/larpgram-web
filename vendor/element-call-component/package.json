@@ -1,0 +1,29 @@
+{
+  "name": "@element-hq/element-call-component",
+  "version": "0.0.0-larpgram.1",
+  "description": "Vendored build of Element Call as a React component (element-call-interface @ 9f7c35c + interface.patch). Rebuild: pnpm build:component in element-call-interface, then rsync component/dist here.",
+  "license": "SEE LICENSE IN ../../../element-call-interface/README.md",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "main": "./dist/element-call.js",
+  "module": "./dist/element-call.js",
+  "types": "./dist/types/component/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/types/component/index.d.ts",
+      "default": "./dist/element-call.js"
+    },
+    "./style.css": "./dist/element-call.css"
+  },
+  "sideEffects": [
+    "*.css"
+  ],
+  "peerDependencies": {
+    "livekit-client": "^2.18.1",
+    "matrix-js-sdk": "*",
+    "react": "^19",
+    "react-dom": "^19"
+  }
+}
