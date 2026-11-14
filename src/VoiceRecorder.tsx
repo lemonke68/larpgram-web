@@ -1,11 +1,11 @@
 import {useEffect,useRef,useState} from 'react';
 import {MsgType,type MatrixClient} from 'matrix-js-sdk';
-import {Icon} from './Icon';
+import {Button,IconButton} from './Controls';
 import {encryptAttachment} from 'matrix-encrypt-attachment';
 import {chooseRecordingType,normalizeWaveform,voiceMetadata,waveformBars} from './voice';
 
 type Draft={blob:Blob;url:string;duration:number;waveform:number[]};
-export function VoiceRecorder({client,roomId,encrypted}:{client:MatrixClient;roomId:string;encrypted:boolean}){
+export function VoiceRecorder({client,roomId,encrypted,idleHidden,videoMode,onVideo}:{client:MatrixClient;roomId:string;encrypted:boolean;idleHidden:boolean;videoMode:boolean;onVideo:()=>void}){
  const [state,setState]=useState<'idle'|'starting'|'recording'|'preview'|'sending'>('idle');
  const [draft,setDraft]=useState<Draft|null>(null),[error,setError]=useState(''),[seconds,setSeconds]=useState(0);
  const recorder=useRef<MediaRecorder|null>(null),stream=useRef<MediaStream|null>(null),context=useRef<AudioContext|null>(null);
@@ -48,5 +48,5 @@ export function VoiceRecorder({client,roomId,encrypted}:{client:MatrixClient;roo
  await client.sendMessage(roomId,{msgtype:MsgType.Audio,body:`Voice message.${extension}`,file:{...result.info,v:'v2',hashes:{sha256:result.info.hashes!.sha256!},url:uploaded.content_uri},info:{mimetype:draft.blob.type,size:draft.blob.size,duration:Math.round(draft.duration)},...voiceMetadata(draft.duration,draft.waveform)});
  discard();
  }catch{if(alive.current){setError('Не удалось отправить голосовое. Запись сохранена для повторной отправки.');setState('preview')}}}
- return <section className={state==='idle'&&!error?'voice-recorder voice-idle':'voice-recorder'} aria-label="Голосовое сообщение">{state==='idle'&&<button type="button" className="icon-button" aria-label="Записать голосовое" title="Записать голосовое" onClick={begin}><Icon name="mic"/></button>}{state==='starting'&&<><span>Ожидание микрофона…</span><button type="button" onClick={discard}>Отмена</button></>}{state==='recording'&&<><span role="status">Запись · {seconds} с</span><button type="button" onClick={()=>recorder.current?.stop()}>Остановить</button><button type="button" onClick={discard}>Отмена</button></>}{draft&&<><audio controls src={draft.url}/><div className="waveform" aria-hidden="true">{waveformBars(normalizeWaveform(draft.waveform)).map((h,i)=><i key={i} style={{height:Math.max(2,Math.round(h*24))+'px'}}/>)}</div><span>{Math.round(draft.duration/1000)} с</span><button type="button" disabled={state==='sending'} onClick={send}>{state==='sending'?'Отправка…':'Отправить голосовое'}</button><button type="button" disabled={state==='sending'} onClick={discard}>Удалить запись</button></>}{error&&<p role="alert">{error}</p>}</section>
+ return <section className={state==='idle'&&!error?'voice-recorder voice-idle':'voice-recorder'} aria-label="Голосовое сообщение" hidden={idleHidden&&state==='idle'&&!error}>{state==='idle'&&<IconButton icon={videoMode?'videoNote':'mic'} className="record-action" label={videoMode?'Записать видеосообщение':'Записать голосовое'} onClick={videoMode?onVideo:begin}/>}{state==='starting'&&<><span>Ожидание микрофона…</span><Button onClick={discard}>Отмена</Button></>}{state==='recording'&&<><span role="status">Запись · {seconds} с</span><Button onClick={()=>recorder.current?.stop()}>Остановить</Button><Button onClick={discard}>Отмена</Button></>}{draft&&<><audio controls src={draft.url}/><div className="waveform" aria-hidden="true">{waveformBars(normalizeWaveform(draft.waveform)).map((h,i)=><i key={i} style={{height:Math.max(2,Math.round(h*24))+'px'}}/>)}</div><span>{Math.round(draft.duration/1000)} с</span><Button disabled={state==='sending'} onClick={send}>{state==='sending'?'Отправка…':'Отправить голосовое'}</Button><Button disabled={state==='sending'} onClick={discard}>Удалить запись</Button></>}{error&&<p role="alert">{error}</p>}</section>
 }

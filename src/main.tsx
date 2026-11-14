@@ -1,4 +1,6 @@
 import {ChatListResize,usePanelWidth} from './ChatListResize';
+import {MusicPlayer} from './MusicPlayer';
+import {useTransientScrollbars} from './scrollbars';
 import React,{lazy,Suspense,useEffect,useLayoutEffect,useRef,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import * as sdk from 'matrix-js-sdk';
@@ -6,16 +8,17 @@ import {api,login,start,recover,logout,savedSession,waitForInitialSync,type Sess
 import './style.css';
 import {Icon} from './Icon';
 import {ContextActions,contextKey,useLongPress,type ActionAnchor} from './ContextActions';
-import {messageLinks} from './profileMedia';
+import {messageLinks,profileMediaKind} from './profileMedia';
 import {VideoNote} from './VideoNote';
 import {Avatar,AvatarProvider} from './Avatar';
 import {Attachment,isSticker,mediaKind,stickerPackField} from './Attachment';
 import {ConversationDetails,type DetailsTarget} from './ConversationDetails';
 import {directPeers,isBroadcastRoom,memberCountLabel,roomPresentation,userHandle,userPresentation} from './roomPresentation';
 import {AccountForm} from './AccountForm';
-import {Devices} from './Devices';
 import {UserDirectory} from './UserDirectory';
-import {OwnProfile} from './OwnProfile';
+import {ProfileWorkspace} from './ProfileWorkspace';
+import {useProfileNavigation} from './ProfileNavigation';
+import {Button,IconButton,PasswordInput} from './Controls';
 import {albumPart} from './albums';
 import {ComposerMedia} from './ComposerMedia';
 import {PendingAttachments,type PendingFile} from './PendingAttachments';
@@ -68,8 +71,9 @@ function roomPreview(room:sdk.Room,direct:boolean){
 type MessageAction = 'edit'|'delete'|'forward';
 type TimelineAction = MessageAction|'pin'|'copy';
 
-function Timeline({room,client,userId,status,visible,onReply,onAction,onReact,onRetry,busy,searchOpen,setSearchOpen,onProfile,jumpRequest}:{
- room:sdk.Room|null; client:sdk.MatrixClient|null; userId:string; status:string; visible:boolean; onReply:(event:sdk.MatrixEvent)=>void; onAction:(kind:TimelineAction,event:sdk.MatrixEvent)=>void;
+function Timeline({room,client,userId,status,visible,onReply,onAction,onReact,onStickerPack,onRetry,busy,searchOpen,setSearchOpen,onProfile,jumpRequest}:{
+ room:sdk.Room|null; client:sdk.MatrixClient|null; userId:string; status:string; visible:boolean; onStickerPack:(event:sdk.MatrixEvent)=>void;
+ onReply:(event:sdk.MatrixEvent)=>void; onAction:(kind:TimelineAction,event:sdk.MatrixEvent)=>void;
  onReact:(id:string,key:string,ownReaction?:string)=>void; onRetry:(event:sdk.MatrixEvent)=>void; busy:boolean; searchOpen:boolean; setSearchOpen:(open:boolean)=>void; onProfile:(id:string,trigger:HTMLElement)=>void; jumpRequest:{id:string}|null;
 }){
  const scroll = useRef<HTMLDivElement>(null);
@@ -112,11 +116,11 @@ function Timeline({room,client,userId,status,visible,onReply,onAction,onReact,on
  for(let index=0;index<events.length;index++){
   const first=events[index];
   const album=albumPart(first);
-  if(!album||!mediaKind(first))continue;
+  if(!album||isSticker(first)||!mediaKind(first))continue;
   const items=[first];
   while(index+1<events.length){
    const next=events[index+1];
-   if(next.getSender()!==first.getSender()||albumPart(next)?.id!==album.id||!mediaKind(next))break;
+   if(isSticker(next)||next.getSender()!==first.getSender()||albumPart(next)?.id!==album.id||!mediaKind(next))break;
    items.push(next);
    index++;
   }
@@ -344,7 +348,7 @@ function Timeline({room,client,userId,status,visible,onReply,onAction,onReact,on
      <button className="sender-avatar" type="button" aria-label={`Профиль ${name}`} onClick={event=>onProfile(sender,event.currentTarget)}>
       <Avatar {...userPresentation(client,room,sender)}/>
      </button>)}
-   <article data-event-id={event.getId()} data-search-target={selected?.id===event.getId()&&!!selected} className={own?'own':''} data-sticker={sticker} data-album-part={paired&&!albumLead}
+   <article data-event-id={event.getId()} data-search-target={selected?.id===event.getId()&&!!selected} className={own?'own':''} data-sticker={sticker} data-gif={profileMediaKind(event)==='gif'} data-text={isText&&!attachmentKind} data-album-part={paired&&!albumLead}
     tabIndex={canAct?0:undefined} aria-keyshortcuts={canAct?'ContextMenu Shift+F10':undefined}
     onKeyDown={key=>{
      if(canAct&&contextKey(key)&&!key.defaultPrevented&&!(key.target instanceof Element&&key.target.closest('a,input,textarea,select,audio,video'))){
@@ -375,8 +379,9 @@ function Timeline({room,client,userId,status,visible,onReply,onAction,onReact,on
      }):plainBody}
     </p>}
     {albumLead?<div className="album-grid">{albumItems!.map(item=><Attachment key={item.getId()} event={item} client={client}/>)}</div>:
-     !paired&&attachmentKind&&<Attachment event={event} client={client}/>}
+     !paired&&attachmentKind&&<Attachment event={event} client={client} openStickerPack={sticker?()=>onStickerPack(event):undefined}/>}
     <div className="message-meta">
+     <div className="message-meta-actions">
      {canAct&&id&&(()=>{
       function react(key:string){
        const mine=reactions.find(reaction=>reaction.getRelation()?.key===key&&reaction.getSender()===userId);
@@ -400,7 +405,7 @@ function Timeline({room,client,userId,status,visible,onReply,onAction,onReact,on
          {canReact&&<div className="reaction-options" aria-label="Реакции">{(expandedReactions?moreReactions:quickReactions).map(key=><button key={key} type="button" disabled={busy} aria-label={`Реакция ${key}`} aria-pressed={reactions.some(reaction=>reaction.getRelation()?.key===key&&reaction.getSender()===userId)} onClick={()=>choose(()=>react(key))}>{key}</button>)}<button className="expand-reactions" type="button" aria-expanded={expandedReactions} aria-label={expandedReactions?"Свернуть реакции":"Ещё реакции"} onClick={()=>setExpandedReactions(value=>!value)}><Icon name="down"/></button></div>}
          <button type="button" onClick={()=>choose(()=>onAction('copy',event))}><Icon name="copy"/>Копировать текст</button>
          {event.replyEventId&&<button type="button" onClick={()=>choose(()=>void jumpById(event.replyEventId!))}><Icon name="reply"/>К оригиналу</button>}
-         {canPin&&<button type="button" disabled={busy} onClick={()=>choose(()=>onAction('pin',event))}><Icon name="pin"/>{pins.includes(id)?'Открепить':'Закрепить сообщение'}</button>}
+         {canPin&&<button type="button" disabled={busy} onClick={()=>choose(()=>onAction('pin',event))}><Icon name={pins.includes(id)?'unpin':'pin'}/>{pins.includes(id)?'Открепить':'Закрепить сообщение'}</button>}
          {isText&&<button type="button" disabled={busy} onClick={()=>choose(()=>onAction('forward',event))}><Icon name="forward"/>Переслать</button>}
          {canReply&&own&&isText&&<button type="button" disabled={busy} onClick={()=>choose(()=>onAction('edit',event))}><Icon name="edit"/>Изменить</button>}
          {canDelete&&<button className="danger-action" type="button" disabled={busy} onClick={()=>choose(()=>onAction('delete',event))}><Icon name="trash"/>Удалить</button>}
@@ -408,8 +413,9 @@ function Timeline({room,client,userId,status,visible,onReply,onAction,onReact,on
       </>;
      })()}
      {event.status===sdk.EventStatus.NOT_SENT&&<button type="button" disabled={busy} onClick={()=>onRetry(event)}>Повторить отправку</button>}
-     {event.isSending()&&event.status!==sdk.EventStatus.NOT_SENT&&<small>Отправляется…</small>}
-     <small>{event.replacingEventId()&&'изменено · '}{messageTime.format(event.getTs())}{own&&!event.status&&<span aria-label={read?'Прочитано':'Отправлено'} title={read?'Прочитано':'Отправлено'}> <Icon name={read?'checks':'check'}/></span>}</small>
+     {event.isSending()&&event.status!==sdk.EventStatus.NOT_SENT&&<small><Icon name="time" size={14}/> Отправляется…</small>}
+     </div>
+     <small className="message-stamp" data-edited={!!event.replacingEventId()}>{event.replacingEventId()&&'изменено · '}{messageTime.format(event.getTs())}{own&&!event.status&&<span aria-label={read?'Прочитано':'Отправлено'} title={read?'Прочитано':'Отправлено'}> <Icon name={read?'checks':'check'}/></span>}</small>
     </div>
    </article>
    </div>
@@ -421,6 +427,7 @@ function Timeline({room,client,userId,status,visible,onReply,onAction,onReact,on
 }
 
 function App(){
+ useTransientScrollbars();
  const chatList=usePanelWidth();
  const [searchOpen,setSearchOpen]=useState(false);
  const [attachments,setAttachments]=useState<Record<string,PendingFile[]>>({});
@@ -438,11 +445,14 @@ function App(){
   setAttachments(current=>({...current,[id]:[...(current[id]??[]),...items]}));
  }
  const [emojiOpen,setEmojiOpen]=useState(false);
+ const [selectedSticker,setSelectedSticker]=useState<sdk.MatrixEvent>();
  const [videoRoom,setVideoRoom]=useState('');
- const [view,setView]=useState<'chats'|'profile'|'settings'>('chats');
+ const [recordMode,setRecordMode]=useState<'voice'|'video'>('voice');
+ const profile=useProfileNavigation();
+ const view=profile.page?'profile':'chats';
  const [authMode,setAuthMode]=useState<'login'|'register'|'reset'>('login');
  const [authNotice,setAuthNotice]=useState('');
- const [roomFilter,setRoomFilter]=useState<'all'|'unread'|'archive'>('all');
+ const [roomFilter,setRoomFilter]=useState<'all'|'archive'>('all');
  const [roomDetails,setRoomDetails]=useState<DetailsTarget|null>(null);
  const detailsTrigger=useRef<HTMLElement|null>(null);
  const headerIdentity=useRef<HTMLButtonElement>(null);
@@ -458,8 +468,6 @@ function App(){
    (trigger?.isConnected?trigger:headerIdentity.current)?.focus({preventScroll:true});
   });
  }
- const [settingsFromProfile,setSettingsFromProfile]=useState(false);
- const [showDevices,setShowDevices]=useState(false);
  const [query,setQuery]=useState('');
  const [folder,setFolder]=useState('');
  const [roomMenu,setRoomMenu]=useState<(ActionAnchor&{id:string})|null>(null);
@@ -531,11 +539,10 @@ function App(){
    if(!signal?.aborted)setRecovering(false);
   }
  }
- const [ticket,setTicket]=useState(''),[username,setUsername]=useState(''),[password,setPassword]=useState(''),[code,setCode]=useState(''),[manual,setManual]=useState(''),[roomId,setRoomId]=useState(''),[call,setCall]=useState<{roomId:string;intent:CallIntent}|null>(null);
+ const [ticket,setTicket]=useState(''),[username,setUsername]=useState(''),[password,setPassword]=useState(''),[code,setCode]=useState(''),[roomId,setRoomId]=useState(''),[call,setCall]=useState<{roomId:string;intent:CallIntent}|null>(null);
  const {incoming,dismiss:dismissIncoming,decline:declineIncoming}=useIncomingCall(client);
  const network=client?.getSyncState();
  const offline=network===sdk.SyncState.Error||network===sdk.SyncState.Reconnecting;
- const master=client?.pushRules?.global.override?.find(rule=>rule.rule_id===sdk.RuleId.Master);
  useEffect(()=>{if(!navigator.locks){setError('Для безопасной работы нужен браузер с Web Locks');return}
  let release:()=>void;let stopped=false;
  navigator.locks.request('larpgram-web-session',{ifAvailable:true},async lock=>{
@@ -603,17 +610,24 @@ function App(){
  const visibleVideo=!!roomId&&videoRoom===roomId&&view==='chats';
  const token=client?.getAccessToken();
  const ownAvatar=session?ownProfile.mxc??client?.getUser(session.userId)?.avatarUrl:null;
+ useEffect(()=>{
+  if(!client||!session)return;
+  let active=true;
+  void client.getProfileInfo(session.userId).then(data=>{
+   if(active)setOwnProfile(current=>({name:current.name??data.displayname,mxc:current.mxc??data.avatar_url}));
+  }).catch(()=>{ /* Sync data remains available as a fallback. */ });
+  return ()=>{active=false};
+ },[client,session]);
  const peers=directPeers(client);
  const presentation=client&&room?roomPresentation(client,room,peers):null;
- const savedRoom=client&&rooms.find(candidate=>roomPresentation(client,candidate,peers).avatar.saved);
  function selectRoom(id:string){
   if(id!==roomId){
-   setFileDrag(false);setSearchOpen(false);setEmojiOpen(false);setVideoRoom('');
+   setFileDrag(false);setSearchOpen(false);setEmojiOpen(false);setSelectedSticker(undefined);setVideoRoom('');
    setRoomDetails(null);setJumpRequest(null);
   }
   setRoomId(id);
   if(session)try{sessionStorage.setItem('larpgram-active-room:'+session.userId,id)}catch{}
-  setView('chats');
+  profile.close();
  }
  function openDirect(id:string){
   const direct=rooms.find(candidate=>candidate.getMyMembership()==='join'&&client&&roomPresentation(client,candidate,peers).peer===id);
@@ -637,9 +651,8 @@ function App(){
  if(selectedSpace)addChildren(selectedSpace);
  const needle=query.trim().toLocaleLowerCase();
  const visibleRooms=joinedRooms.filter(r=>
-  (!selectedSpace||folderRooms.has(r.roomId))&&
+  (roomFilter==='archive'||!selectedSpace||folderRooms.has(r.roomId))&&
   (roomFilter==='archive'?!!r.tags['m.lowpriority']:!r.tags['m.lowpriority'])&&
-  (roomFilter!=='unread'||r.getMyMembership()==='invite'||r.getUnreadNotificationCount()>0)&&
   [r.name,peers.get(r.roomId)].some(value=>value?.toLocaleLowerCase().includes(needle))
  );
  function muted(id:string){
@@ -660,20 +673,20 @@ function App(){
  }
  const menuRoom=roomMenu?client?.getRoom(roomMenu.id):null;
  return <AvatarProvider token={token}><div className={session?'app':'app signed-out'} data-theme={theme} data-wallpaper={wallpaper?'dots':'plain'} style={chatList.width===null?undefined:{'--chat-list-width':chatList.width+'px'} as React.CSSProperties}>
+ {session&&spaces.length>0&&<nav className="room-folders" aria-label="Папки">
+  <button type="button" title="Все папки" aria-label="Все папки" aria-pressed={roomFilter==='all'&&!selectedSpace} onClick={()=>{setFolder('');setRoomFilter('all')}}>
+   <Icon name="chat" size={22}/><span>Все чаты</span>
+  </button>
+  {spaces.map(space=><button key={space.roomId} type="button" title={space.name} aria-pressed={roomFilter==='all'&&folder===space.roomId} onClick={()=>{setFolder(space.roomId);setRoomFilter('all')}}>
+   <Icon name="archive" size={22}/><span>{space.name}</span>
+  </button>)}
+ </nav>}
  {session&&<aside id="chat-list" className="rail" aria-label="Список чатов">
- <div className="rail-heading"><div className="brand"><span aria-hidden="true"><Icon name="chat"/></span><strong className="rail-brand-name">larpgram</strong></div>
- <button aria-label="Новый чат" title="Новый чат" className="icon-button new-room-button" type="button" disabled={!client||busy} onClick={()=>{setError('');setRoomName('');setInvitees('');setInviteQuery('');setNewRoom('direct')}}><Icon name="plus"/></button></div>
+ <div className="rail-heading"><div className="brand"><span aria-hidden="true"><Icon name="chatBrand"/></span><strong className="rail-brand-name">larpgram</strong></div>
+ <div className="rail-tools"><IconButton icon="archive" label="Архив" aria-pressed={roomFilter==='archive'} onClick={()=>setRoomFilter(current=>current==='archive'?'all':'archive')}/>
+ <button aria-label="Новый чат" title="Новый чат" className="icon-button new-room-button" type="button" disabled={!client||busy} onClick={()=>{setError('');setRoomName('');setInvitees('');setInviteQuery('');setNewRoom('direct')}}><Icon name="plus"/></button></div></div>
  {offline&&<small className="connection-status" role="status">Нет связи · переподключаемся</small>}
  <div className="rail-search"><Icon name="search"/><input className="search" type="search" aria-label="Поиск чатов" placeholder="Поиск чатов" value={query} onChange={e=>setQuery(e.target.value)}/></div>
- <div className="room-filters">
-  <button type="button" aria-pressed={roomFilter==='all'} onClick={()=>setRoomFilter('all')}>Все</button>
-  <button type="button" aria-pressed={roomFilter==='unread'} onClick={()=>setRoomFilter('unread')}>Непрочитанные</button>
-  <button type="button" aria-pressed={roomFilter==='archive'} onClick={()=>setRoomFilter('archive')}>Архив</button>
- </div>
- {spaces.length>0&&<div className="room-filters room-folders" aria-label="Папки">
-  <button type="button" aria-pressed={!selectedSpace} onClick={()=>setFolder('')}>Все папки</button>
-  {spaces.map(space=><button key={space.roomId} type="button" title={space.name} aria-pressed={folder===space.roomId} onClick={()=>setFolder(space.roomId)}>{space.name}</button>)}
- </div>}
  <nav className="rooms" aria-label="Чаты">
  {visibleRooms.map(r=>{
   const unread=r.getUnreadNotificationCount();
@@ -690,17 +703,16 @@ function App(){
    {unread>0&&<span className="unread-count" data-muted={quiet} aria-label={`Непрочитанных уведомлений: ${unread}`}>{unread>99?'99+':unread}</span>}
   </button>;
  })}
- {visibleRooms.length===0&&<p className="empty-list" role="status">{!client||!client.isInitialSyncComplete()?'Синхронизация…':needle?'Чаты не найдены':roomFilter==='archive'?'Архив пуст':roomFilter==='unread'?'Нет непрочитанных чатов':selectedSpace?'В папке нет чатов':'Чатов пока нет'}</p>}
+ {visibleRooms.length===0&&<p className="empty-list" role="status">{!client||!client.isInitialSyncComplete()?'Синхронизация…':needle?'Чаты не найдены':roomFilter==='archive'?'Архив пуст':selectedSpace?'В папке нет чатов':'Чатов пока нет'}</p>}
  {client&&needle.length>=2&&<UserDirectory client={client} query={query} choose={openDirect}/>}
  </nav>
- <div className="account-bar"><button className="account" type="button" aria-label="Мой профиль" title="Мой профиль" onClick={()=>{setVideoRoom('');setView('profile')}}><Avatar name={displayName} mxc={ownAvatar} identity={session.userId}/><span className="room-info"><strong>{displayName}</strong></span></button>
- <button className="icon-button" type="button" aria-label="Настройки" title="Настройки" onClick={()=>{setVideoRoom('');setSettingsFromProfile(false);setView('settings')}}><Icon name="settings"/></button></div>
+ <div className="account-bar"><button id="open-profile" className="account" type="button" aria-label="Профиль" title="Профиль" aria-current={view==='profile'} disabled={!client} onClick={()=>profile.open('profile','open-profile')}><Avatar own name={displayName} mxc={ownAvatar} identity={session.userId}/><span className="room-info"><strong>{displayName}</strong><small>Профиль</small></span></button></div>
  {roomMenu&&menuRoom&&<ContextActions anchor={roomMenu} close={()=>setRoomMenu(null)} label="Действия с чатом">{roomActions(menuRoom,closeRoomMenu)}</ContextActions>}
  <ChatListResize {...chatList}/>
  </aside>}
- <main>
+ <main><MusicPlayer key={session?.userId} client={client}>
 
- {error&&<div role="alert" className="error">{error}</div>}{!session?<section className="auth glass"><div className="brand"><span aria-hidden="true"><Icon name="chat"/></span>larpgram</div>
+ {error&&<div role="alert" className="error">{error}</div>}{!session?<section className="auth glass"><div className="auth-mark" aria-label="Larpgram"><span aria-hidden="true">L</span></div>
  {authMode!=='login'?<AccountForm mode={authMode} onBack={()=>setAuthMode('login')} onDone={name=>{
   setUsername(name);setAuthNotice(authMode==='register'?'Аккаунт создан. Теперь можно войти.':'Пароль обновлён. Войдите с новым паролем.');setAuthMode('login');
  }}/>:<><h2>{ticket?'Подтверждение входа':'Вход'}</h2>{ticket&&<p>Введите шестизначный код из письма.</p>}{authNotice&&<p role="status">{authNotice}</p>}<form onSubmit={e=>{e.preventDefault();run(async()=>{
@@ -709,73 +721,24 @@ function App(){
  loginRecovery.current={session:next,password};
  setRecovering(true);
  setDrafts(readDrafts(next.userId));setSession(next);setPassword('');setTicket('');setCode('');
- })}}><label>Ник или почта<input autoComplete="username" required disabled={!!ticket||busy} value={username} onChange={e=>setUsername(e.target.value)}/></label><label>Пароль<input autoComplete="current-password" type="password" required disabled={busy||!!ticket} value={password} onChange={e=>setPassword(e.target.value)}/></label>{ticket&&<label>Код из письма<input required autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6}" value={code} onChange={e=>setCode(e.target.value)}/></label>}<button disabled={!owned||busy}>{busy?'Подождите…':ticket?'Подтвердить':'Войти'}</button>{ticket&&<button type="button" onClick={()=>{setTicket('');setCode('')}} disabled={busy}>Назад</button>}</form>
+ })}}><label>Ник или почта<input autoComplete="username" required disabled={!!ticket||busy} value={username} onChange={e=>setUsername(e.target.value)}/></label><PasswordInput label="Пароль" autoComplete="current-password" required disabled={busy||!!ticket} value={password} onChange={setPassword}/>{ticket&&<label>Код из письма<input required autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6}" value={code} onChange={e=>setCode(e.target.value)}/></label>}<Button variant="primary" type="submit" className="auth-next" busy={busy} disabled={!owned}>{busy?'Подождите…':ticket?'Подтвердить':'Войти'}{!busy&&<Icon name="arrowNext"/>}</Button>{ticket&&<button type="button" onClick={()=>{setTicket('');setCode('')}} disabled={busy}>Назад</button>}</form>
  {!ticket&&<div className="auth-links">
   <button type="button" disabled={!owned||busy} onClick={()=>{setError('');setPassword('');setAuthMode('register')}}>Регистрация</button>
   <button type="button" disabled={!owned||busy} onClick={()=>{setError('');setPassword('');setAuthMode('reset')}}>Забыли пароль?</button>
  </div>}
  </>}</section>:<>
- {view==='profile'&&<section className="area profile-area">
- <div className="area-heading"><h2>Профиль</h2><button className="icon-button" type="button" aria-label="Закрыть профиль" title="Закрыть профиль" onClick={()=>setView('chats')}><Icon name="close"/></button></div>
- {client&&<OwnProfile client={client} userId={session.userId} name={displayName} mxc={ownAvatar} onSettings={()=>{setSettingsFromProfile(true);setView('settings')}}
-  onSaved={savedRoom?()=>selectRoom(savedRoom.roomId):undefined}
-  onUpdate={patch=>setOwnProfile(current=>({...current,...patch}))}/>}
-
-
- </section>}
- {view==='settings'&&<section className="area settings-area">
- <div className="area-heading"><h2>Настройки</h2><button className="icon-button" type="button" aria-label="Закрыть настройки" title="Закрыть настройки" onClick={()=>setView(settingsFromProfile?'profile':'chats')}><Icon name="close"/></button></div>
- <button type="button" className="settings-profile" onClick={()=>setView('profile')}>
-  <span className="settings-avatar"><Avatar name={displayName} mxc={ownAvatar} identity={session.userId}/><span><Icon name="photo"/></span></span>
-  <strong>{displayName}</strong><small>{userHandle(session.userId)}</small>
- </button>
- <div className="settings-list">
- <div className="settings-group glass">
- <details className="settings-category"><summary className="settings-row"><span className="settings-icon" data-color="orange"><Icon name="chat"/></span><strong>Чаты</strong><Icon name="chevron"/></summary>
- <div className="settings-content"><h3>Оформление</h3><div className="theme-options">
- <button type="button" aria-pressed={theme==='dark'} onClick={()=>setTheme('dark')}>Тёмная</button>
- <button type="button" aria-pressed={theme==='light'} onClick={()=>setTheme('light')}>Светлая</button>
- </div><h3>Фон переписки</h3><div className="theme-options">
- <button type="button" aria-pressed={wallpaper} onClick={()=>setWallpaper(true)}>Узор</button>
- <button type="button" aria-pressed={!wallpaper} onClick={()=>setWallpaper(false)}>Однотонный</button>
- </div></div></details>
- <details className="settings-category"><summary className="settings-row"><span className="settings-icon" data-color="red"><Icon name="bell"/></span><strong>Уведомления</strong><Icon name="chevron"/></summary><div className="settings-content"><p>{joinedRooms.filter(candidate=>muted(candidate.roomId)).length} чатов с отключёнными уведомлениями</p>{master&&<button type="button" aria-pressed={!master.enabled} disabled={busy} onClick={()=>void run(async()=>{
-  await client!.setPushRuleEnabled('global',sdk.PushRuleKind.Override,sdk.RuleId.Master,!master.enabled);
-  await client!.getPushRules();
-  refresh(value=>value+1);
- })}>{master.enabled?'Уведомления аккаунта выключены':'Уведомления аккаунта включены'}</button>}</div></details>
- <details className="settings-category"><summary className="settings-row"><span className="settings-icon" data-color="green"><Icon name="shield"/></span><strong>Конфиденциальность</strong><Icon name="chevron"/></summary>
- <div className="settings-content"><h3>Заблокированные пользователи</h3>
- {client?.getIgnoredUsers().length?<ul>{client.getIgnoredUsers().map(id=><li key={id}>{userHandle(id)} <button type="button" disabled={busy} onClick={()=>void run(async()=>{await client.setIgnoredUsers(client.getIgnoredUsers().filter(user=>user!==id))})}>Разблокировать</button></li>)}</ul>:<p>Список пуст</p>}</div></details>
- </div>
- <div className="settings-group glass">
- <details className="settings-category" open={recoveryAttention||undefined}>
-  <summary className="settings-row"><span className="settings-icon"><Icon name="shield"/></span><strong>Шифрование</strong><Icon name="chevron"/></summary>
-  <div className="settings-content recovery"><h3>Восстановление истории</h3>
-  <p>При входе история восстанавливается автоматически. Здесь можно повторить восстановление по паролю или ключу.</p>
-  <form onSubmit={event=>{
-   event.preventDefault();
-   if(!client||recovering||(!password&&!manual))return;
-   void run(async()=>{
-    const secret=password,recoveryKey=manual;
-    setPassword('');setManual('');
-    await restoreHistory(client,session,secret,recoveryKey);
-   });
-  }}>
-   <input aria-label="Пароль для восстановления" type="password" placeholder="Пароль аккаунта" value={password} onChange={event=>setPassword(event.target.value)} disabled={recovering}/>
-   <input aria-label="Ключ восстановления" placeholder="Или ключ восстановления" value={manual} onChange={event=>setManual(event.target.value)} disabled={recovering}/>
-   <button disabled={busy||recovering||!client||(!password&&!manual)}>Восстановить</button>
-  </form>
-  {(recovering||recoveryAttention||status==='Веб-устройство подтверждено.')&&<p role="status">{status}</p>}
- </div></details>
- {client&&<details className="settings-category" onToggle={event=>setShowDevices(event.currentTarget.open)} open={showDevices}>
-  <summary className="settings-row"><span className="settings-icon" data-color="teal"><Icon name="devices"/></span><strong>Устройства</strong><Icon name="chevron"/></summary>
-  {showDevices&&<div className="settings-content"><Devices client={client} session={session}/></div>}
- </details>}
- <details className="settings-category"><summary className="settings-row"><span className="settings-icon" data-color="blue"><Icon name="settings"/></span><strong>Аккаунт</strong><Icon name="chevron"/></summary><div className="settings-content"><button disabled={busy||recovering||!client} onClick={()=>run(async()=>{await logout(client!,session);writeDrafts(session.userId,{});setClient(null);setSession(null);setRecoveryAttention(false);setStatus('Подключение…');setRoomId('');setQuery('');setRoomFilter('all');setFolder('');setOwnProfile({});setAttachments({});setRoomDetails(null);setShowDevices(false);setDrafts({});setReplies({});setPassword('');setManual('');dismissIncoming();setCall(null);setView('chats')})}>Завершить сессию</button></div></details>
- </div>
- </div>
- </section>}
+ {profile.page&&client&&<ProfileWorkspace client={client} session={session} nav={profile} name={displayName} mxc={ownAvatar}
+  chooseRoom={selectRoom} onUpdate={patch=>setOwnProfile(current=>({...current,...patch}))}
+  logout={async()=>{
+   await logout(client,session);
+   writeDrafts(session.userId,{});profile.close();setClient(null);setSession(null);setRecoveryAttention(false);
+   setStatus('Подключение…');setRoomId('');setQuery('');setRoomFilter('all');setFolder('');setOwnProfile({});
+   setAttachments({});setRoomDetails(null);setDrafts({});setReplies({});setPassword('');dismissIncoming();setCall(null);
+  }}
+  theme={theme} setTheme={setTheme} wallpaper={wallpaper} setWallpaper={setWallpaper}
+  mutedRooms={joinedRooms.filter(candidate=>muted(candidate.roomId))}
+  recovering={recovering} recoveryStatus={recovering||recoveryAttention||status==='Веб-устройство подтверждено.'?status:''}
+  restore={(secret,key)=>restoreHistory(client,session,secret,key)} onMatrixUpdate={()=>refresh(value=>value+1)}/>}
  <div className="conversation-layout" hidden={view!=='chats'}>
  <section className="chat" hidden={view!=='chats'} aria-label="Переписка" data-file-drag={fileDrag}
   onDragOver={event=>{if(canWrite&&event.dataTransfer.types.includes('Files')){event.preventDefault();event.dataTransfer.dropEffect='copy';setFileDrag(true)}}}
@@ -787,7 +750,7 @@ function App(){
    else openDetails(presentation.peer?{kind:'user',userId:presentation.peer}:{kind:'room'},event.currentTarget);
   }}>
    <Avatar {...presentation.avatar}/>
-   <span className="chat-heading"><strong>{room.name}</strong>{<small>{presentation.peer?userHandle(presentation.peer):memberCountLabel(room)}</small>}</span>
+   <span className="chat-heading"><strong>{room.name}</strong>{!presentation.avatar.saved&&<small>{presentation.peer?userHandle(presentation.peer):memberCountLabel(room)}</small>}</span>
   </button>:null}
   {room?.getMyMembership()==='join'&&client&&<div className="call-buttons">
    {activeCall(client,room)&&<small className="call-active">Идёт звонок</small>}
@@ -798,7 +761,8 @@ function App(){
    <button className="icon-button" type="button" aria-label="Поиск в чате" title="Поиск в чате" aria-expanded={searchOpen} onClick={()=>setSearchOpen(!searchOpen)}><Icon name="search"/></button>
   </div>}
  </header>
- <Timeline key={roomId} room={room} client={client} userId={session.userId} status={status} visible={view==='chats'} busy={busy} searchOpen={searchOpen} setSearchOpen={setSearchOpen} jumpRequest={jumpRequest}
+ <Timeline key={'timeline:'+roomId} room={room} client={client} userId={session.userId} status={status} visible={view==='chats'} busy={busy} searchOpen={searchOpen} setSearchOpen={setSearchOpen} jumpRequest={jumpRequest}
+ onStickerPack={event=>{setSelectedSticker(event);setEmojiOpen(true)}}
  onProfile={(id,trigger)=>openDetails({kind:'user',userId:id},trigger)}
  onRetry={event=>run(async()=>{if(client&&room){await client.resendEvent(event,room);const body=event.getContent().body;if(typeof body==='string'&&event.getContent().msgtype===sdk.MsgType.Text)updateDraft(roomId,'',body)}})}
  onAction={(kind,event)=>{
@@ -829,7 +793,7 @@ function App(){
   <div><strong>Ответ · {room?.getMember(reply.getSender()??'')?.name??reply.getSender()}</strong><span>{messageBody(reply)}</span></div>
   <button type="button" className="icon-button" aria-label="Отменить ответ" title="Отменить ответ" onClick={()=>setReplies(current=>({...current,[roomId]:undefined}))}><Icon name="close"/></button>
  </div>}
- {client&&canWrite&&room&&<PendingAttachments key={roomId} client={client} room={room} items={attachments[roomId]??[]} busy={busy||uploading} reply={reply}
+ {client&&canWrite&&room&&<PendingAttachments key={'attachments:'+roomId} client={client} room={room} items={attachments[roomId]??[]} busy={busy||uploading} reply={reply}
   update={(id,caption)=>setAttachments(current=>({...current,[roomId]:(current[roomId]??[]).map(item=>item.id===id?{...item,caption}:item)}))}
   remove={id=>setAttachments(current=>({...current,[roomId]:(current[roomId]??[]).filter(item=>item.id!==id)}))}
   onBusy={setUploading} consumeReply={()=>setReplies(current=>current[roomId]===reply?{...current,[roomId]:undefined}:current)}/>}
@@ -841,7 +805,7 @@ function App(){
  }else{
   await client!.sendTextMessage(roomId,text);
  }
- updateDraft(roomId,'',text)})}}><button type="button" className="icon-button" aria-label="Медиапанель" title="Эмодзи, стикеры и GIF" aria-expanded={emojiOpen} onClick={()=>setEmojiOpen(!emojiOpen)}><Icon name="emoji"/></button>
+ updateDraft(roomId,'',text)})}}><button type="button" className="icon-button" aria-label="Медиапанель" title="Эмодзи, стикеры и GIF" aria-expanded={emojiOpen} onClick={()=>{setSelectedSticker(undefined);setEmojiOpen(!emojiOpen)}}><Icon name={emojiOpen?'keyboard':'emoji'}/></button>
  <textarea ref={composerInput} aria-label="Сообщение" placeholder="Сообщение" rows={1} value={text}
  onPaste={event=>{const files=Array.from(event.clipboardData.files);if(files.length){event.preventDefault();addFiles(roomId,files)}}}
  onChange={e=>updateDraft(roomId,e.target.value)} onKeyDown={event=>{
@@ -849,9 +813,10 @@ function App(){
    event.preventDefault();
    event.currentTarget.form?.requestSubmit();
   }
- }}/><label className="attach icon-button" title="Прикрепить файл"><Icon name="clip"/><input aria-label="Прикрепить файлы" type="file" multiple onChange={event=>{addFiles(roomId,Array.from(event.target.files??[]));event.target.value=''}}/></label>{room.hasEncryptionStateEvent()&&<button type="button" className="icon-button" aria-label="Записать видеосообщение" title="Записать видеосообщение" onClick={()=>setVideoRoom(roomId)}><Icon name="videoNote"/></button>}
- <button className="icon-button send-button" aria-label="Отправить" title="Отправить" disabled={busy||uploading||!text.trim()}><Icon name="send"/></button></form>}
- {emojiOpen&&client&&room&&<ComposerMedia key={roomId} client={client} room={room} busy={busy||uploading} close={()=>{setEmojiOpen(false);requestAnimationFrame(()=>composerInput.current?.focus())}}
+ }}/><label className="attach icon-button" title="Прикрепить файл"><Icon name="clip"/><input aria-label="Прикрепить файлы" type="file" multiple onChange={event=>{addFiles(roomId,Array.from(event.target.files??[]));event.target.value=''}}/></label>
+ {!!text.trim()&&<IconButton icon="send" className="send-button" label="Отправить" variant="primary" type="submit" disabled={uploading} busy={busy}/>}
+ {room.hasEncryptionStateEvent()&&!text.trim()&&<IconButton icon="overflow" size={18} className="record-mode" label={recordMode==='voice'?'Переключить на видеосообщение':'Переключить на голосовое'} onClick={()=>setRecordMode(mode=>mode==='voice'?'video':'voice')}/>}</form>}
+ {emojiOpen&&client&&room&&<ComposerMedia key={'media:'+roomId+':'+(selectedSticker?.getId()??'picker')} selectedSticker={selectedSticker} client={client} room={room} busy={busy||uploading} close={()=>{setEmojiOpen(false);requestAnimationFrame(()=>composerInput.current?.focus())}}
   stageFile={file=>addFiles(roomId,[file])}
   sendSticker={sticker=>void run(async()=>{
    await client.sendEvent(roomId,sdk.EventType.Sticker,{body:sticker.name,url:sticker.url,info:sticker.info,...(sticker.pack?{[stickerPackField]:sticker.pack}:{})});
@@ -864,8 +829,8 @@ function App(){
    updateDraft(roomId,text.slice(0,start)+emoji+text.slice(field.selectionEnd));
    requestAnimationFrame(()=>{field.focus();field.setSelectionRange(start+emoji.length,start+emoji.length)});
   }}/>}
- {visibleVideo&&room&&client&&<VideoNote key={roomId} client={client} roomId={roomId} close={()=>setVideoRoom('')}/>}
- {canWrite&&room&&client&&<VoiceRecorder key={roomId} client={client} roomId={roomId} encrypted={room.hasEncryptionStateEvent()}/>}
+ {visibleVideo&&room&&client&&<VideoNote key={'video:'+roomId} client={client} roomId={roomId} close={()=>setVideoRoom('')}/>}
+ {canWrite&&room&&client&&<VoiceRecorder key={'voice:'+roomId} client={client} roomId={roomId} encrypted={room.hasEncryptionStateEvent()} idleHidden={!!text.trim()||visibleVideo} videoMode={recordMode==='video'&&room.hasEncryptionStateEvent()} onVideo={()=>setVideoRoom(roomId)}/>}
  </div>
  {room?.getMyMembership()==='join'&&!canWrite&&<small className="read-only-chat">{isBroadcastRoom(room)?'Публиковать могут администраторы':'Отправка сообщений недоступна'}</small>}
  </section>
@@ -919,8 +884,8 @@ function App(){
    <input aria-label="Matrix ID участников" placeholder="@имя:сервер" required={newRoom==='direct'} value={invitees} onChange={event=>setInvitees(event.target.value)}/>
    {error&&<p role="alert" className="error">{error}</p>}
    <div className="dialog-actions">
-    <button type="button" disabled={busy} onClick={()=>setNewRoom(null)}>Отмена</button>
-    <button disabled={busy}>Создать</button>
+    <Button disabled={busy} onClick={()=>setNewRoom(null)}>Отмена</Button>
+    <Button type="submit" variant="primary" busy={busy}>Создать</Button>
    </div>
   </form>
  </dialog>}
@@ -960,8 +925,8 @@ function App(){
    {action.kind!=='edit'&&<p className="action-preview">{messageBody(action.event)}</p>}
    {error&&<p role="alert" className="error">{error}</p>}
    <div className="dialog-actions">
-    <button type="button" disabled={busy} onClick={()=>setAction(null)}>Отмена</button>
-    <button disabled={busy||(action.kind!=='delete'&&!actionValue.trim())}>{action.kind==='edit'?'Сохранить':action.kind==='delete'?'Удалить':'Переслать'}</button>
+    <Button disabled={busy} onClick={()=>setAction(null)}>Отмена</Button>
+    <Button type="submit" variant={action.kind==='delete'?'danger':'primary'} busy={busy} disabled={action.kind!=='delete'&&!actionValue.trim()}>{action.kind==='edit'?'Сохранить':action.kind==='delete'?'Удалить':'Переслать'}</Button>
    </div>
   </form>
  </dialog>}
@@ -972,6 +937,6 @@ function App(){
   <button type="button" onClick={()=>void declineIncoming().catch(()=>setError('Не удалось передать отклонение звонка'))} aria-label="Отклонить звонок" title="Отклонить звонок" className="icon-button call-leave"><Icon name="hangup"/></button>
  </section>}
  {call&&client&&<Suspense fallback={<div className="call-overlay"><p role="status">Загрузка звонка…</p></div>}><CallOverlay key={call.roomId} client={client} roomId={call.roomId} intent={call.intent} theme={theme} onClose={()=>setCall(null)}/></Suspense>}
- </>}</main></div></AvatarProvider>
+ </>}</MusicPlayer></main></div></AvatarProvider>
 }
 createRoot(document.getElementById('root')!).render(<App/>);

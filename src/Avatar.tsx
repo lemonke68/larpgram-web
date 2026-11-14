@@ -43,7 +43,7 @@ export function AvatarProvider({token,children}:{token?:string|null;children:Rea
   return <AvatarCache.Provider value={cache}>{children}</AvatarCache.Provider>;
 }
 
-export function Avatar({name,mxc,identity,saved=false}:{name:string;mxc?:string|null;identity?:string;saved?:boolean}){
+export function Avatar({name,mxc,identity,saved=false,own=false}:{name:string;mxc?:string|null;identity?:string;saved?:boolean;own?:boolean}){
   const cache=useContext(AvatarCache);
   const [image,setImage]=useState<{mxc:string;cache:typeof cache;url:string}|null>(null);
   useEffect(()=>{
@@ -56,7 +56,7 @@ export function Avatar({name,mxc,identity,saved=false}:{name:string;mxc?:string|
   const initial=Array.from(name.replace(/^@/,'').trim())[0]?.toUpperCase()||'L';
   const tone=Array.from(identity??name).reduce((sum,char)=>sum+(char.codePointAt(0)??0),0)%5;
   const current=!saved&&image?.mxc===mxc&&image?.cache===cache?image:null;
-  return <span className="avatar" data-tone={tone} aria-hidden="true">
+  return <span className={`avatar${own?' own-avatar':''}`} data-saved={saved||undefined} data-tone={tone} aria-hidden="true">
     {saved?<Icon name="bookmark"/>:initial}
     {current&&<img src={current.url} alt="" onError={()=>setImage(previous=>previous===current?null:previous)}/>}
   </span>;

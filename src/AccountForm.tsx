@@ -1,4 +1,5 @@
 import {useState,type FormEvent} from 'react';
+import {Button,IconButton,PasswordInput} from './Controls';
 import {api} from './session';
 
 const errors: Record<string,string> = {
@@ -54,22 +55,21 @@ export function AccountForm({mode,onBack,onDone}:{
   }
 
   return <>
-    <h2>{registering?'Регистрация':'Сброс пароля'}</h2>
+    <div className="auth-form-heading"><IconButton icon="arrowBack" label="Назад" disabled={busy} onClick={()=>{
+     if(!ticket){onBack();return}
+     setTicket('');setCode('');setPassword('');setError('');
+    }}/><h2>{registering?'Регистрация':'Сброс пароля'}</h2></div>
     <form onSubmit={submit}>
       {ticket?<fieldset disabled={busy}>
         <p>Введите код из письма и задайте пароль.</p>
         <label>Код из письма<input autoComplete="one-time-code" inputMode="numeric" pattern="[0-9]{6}" required value={code} onChange={event=>setCode(event.target.value)}/></label>
-        <label>Новый пароль<input autoComplete="new-password" type="password" required value={password} onChange={event=>setPassword(event.target.value)}/></label>
+        <PasswordInput label="Новый пароль" autoComplete="new-password" required value={password} onChange={setPassword} disabled={busy}/>
       </fieldset>:<fieldset disabled={busy}>
         <label>{registering?'Ник':'Ник или почта'}<input autoComplete="username" required value={login} onChange={event=>setLogin(event.target.value)}/></label>
         {registering&&<label>Почта<input type="email" autoComplete="email" required value={email} onChange={event=>setEmail(event.target.value)}/></label>}
       </fieldset>}
       {error&&<p className="error" role="alert">{error}</p>}
-      <button disabled={busy}>{busy?'Подождите…':ticket?'Подтвердить':'Получить код'}</button>
-      <button type="button" disabled={busy} onClick={()=>{
-        if(!ticket){onBack();return}
-        setTicket('');setCode('');setPassword('');setError('');
-      }}>{ticket?'Назад':'Ко входу'}</button>
+      <Button type="submit" variant="primary" busy={busy}>{busy?'Подождите…':ticket?'Подтвердить':'Получить код'}</Button>
     </form>
   </>;
 }

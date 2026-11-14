@@ -1,3 +1,4 @@
+import {IconButton} from './Controls';
 import {useEffect,useRef,useState} from 'react';
 import {MsgType,type MatrixClient} from 'matrix-js-sdk';
 import {encryptAttachment} from 'matrix-encrypt-attachment';
@@ -93,8 +94,8 @@ export function VideoNote({client,roomId,close}:{client:MatrixClient;roomId:stri
     {draft?<video src={url} controls playsInline/>:<video ref={preview} muted autoPlay playsInline/>}
     <div className="composer-tools">
       {recording&&<button type="button" className="icon-button" aria-label="Остановить запись видео" title="Остановить запись видео" onClick={()=>recorder.current?.stop()}><Icon name="stop"/></button>}
-      {draft&&<button type="button" className="icon-button" disabled={sending} aria-label="Отправить видео" title="Отправить видео" onClick={send}><Icon name="send"/></button>}
-      <button type="button" className="icon-button" disabled={sending} aria-label="Закрыть запись видео" title="Закрыть запись видео" onClick={close}><Icon name="close"/></button>
+      {draft&&<IconButton icon="send" type="button" disabled={sending} label="Отправить видео" title="Отправить видео" onClick={send}/>}
+      <IconButton icon="close" type="button" disabled={sending} label="Закрыть запись видео" title="Закрыть запись видео" onClick={close}/>
     </div>
     {error&&<p role="alert">{error}</p>}
   </section>;

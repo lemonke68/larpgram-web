@@ -1,0 +1,33 @@
+const {chromium}=require(process.env.PLAYWRIGHT_MODULE||'playwright');
+const a=require('node:assert/strict');
+const [out,url='http://127.0.0.1:4202/']=process.argv.slice(2);
+const png=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/l1sAAAAASUVORK5CYII=','base64');
+(async()=>{const b=await chromium.launch({args:['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream']});
+try{for(const theme of ['dark','light']){
+ const c=await b.newContext({viewport:{width:1280,height:720},hasTouch:true,permissions:['microphone','camera']});
+ await c.addInitScript(theme=>localStorage.setItem('larpgram-theme',theme),theme);
+ await c.route('**/_matrix/client/v1/media/**',r=>r.fulfill({body:png,contentType:'image/png'}));
+ const p=await c.newPage();p.setDefaultTimeout(4000);await p.goto(url);
+ const btn=(name)=>p.getByRole('button',{name,exact:true});
+ const shot=async name=>{await p.screenshot({path:out+'/'+name+'-'+theme+'.png'});console.log('frame',name,theme)};
+ await btn('Toluze · фикстура').click();
+ const event=p.locator('.timeline article[tabindex]').last();
+ await event.scrollIntoViewIfNeeded();await p.waitForTimeout(300);const menu=p.locator('.context-actions');
+ await event.evaluate(el=>el.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,clientX:1278,clientY:718})));await menu.waitFor();
+ const rect=await menu.boundingBox();a(rect.x+rect.width<=1280&&rect.y+rect.height<=720);
+ await shot('after-context');await p.keyboard.press('Escape');await menu.waitFor({state:'hidden'});
+ await event.focus();await p.keyboard.press('Shift+F10');await menu.waitFor();await p.keyboard.press('ArrowDown');await p.keyboard.press('Escape');
+ await event.evaluate(el=>el.dispatchEvent(new PointerEvent('pointerdown',{pointerType:'touch',pointerId:22,isPrimary:true,bubbles:true,clientX:1278,clientY:718})));
+ await menu.waitFor();await p.keyboard.press('Escape');
+ await btn('Открыть изображение').click();await p.getByRole('dialog').waitFor();await shot('after-viewer');await p.keyboard.press('Escape');
+ await btn('Записать голосовое').click();await p.getByText('Остановить',{exact:true}).waitFor();await p.waitForTimeout(400);
+ await shot('after-recording');await btn('Остановить').click();await btn('Удалить запись').click();
+ const resize=p.getByRole('separator').first();await resize.focus();await p.keyboard.press('Home');await shot('after-narrow-rail');await p.keyboard.press('End');
+ // Browser layout viewport at 2× browser zoom = half the unzoomed dimensions.
+ await p.setViewportSize({width:640,height:360});await btn('Профиль').click();
+ await p.locator('#profile-identity').click();a(await btn('Сохранить').isVisible());a(await p.evaluate(()=>document.documentElement.scrollWidth===innerWidth));
+ await p.setViewportSize({width:1280,height:720});await btn('Назад').click();await btn('Назад').click();
+ await btn('Аудиозвонок').click();const shell=p.getByRole('region',{name:'Звонок'});await shell.waitFor();
+ await btn('Свернуть').click({timeout:3000});await shot('after-call-collapsed');await btn('Развернуть').click();await shot('after-call-shell');await btn('Завершить звонок').click();
+ await c.close();
+ }}finally{await b.close()}console.log('PASS: contextmenu at viewport edge, keyboard context, synthetic touch long-press, media viewer, fake microphone start/stop, rail keyboard resize, 640×360 layout, call shell collapse/expand')})().catch(e=>{console.error(e);process.exitCode=1});

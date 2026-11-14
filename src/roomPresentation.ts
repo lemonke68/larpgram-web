@@ -1,4 +1,5 @@
 import {EventType,type MatrixClient,type Room} from 'matrix-js-sdk';
+import {savedMessagesId} from "./savedMessages";
 
 export function directPeers(client:MatrixClient|null){
   const peers=new Map<string,string>();
@@ -30,7 +31,7 @@ export function roomPresentation(client:MatrixClient,room:Room,peers:Map<string,
   const inferred=room.getInvitedAndJoinedMemberCount()===2&&!isBroadcastRoom(room)&&!alias&&!topic&&
     !create?.type&&joinRule!=='public'&&namedForPeer?other.userId:undefined;
   const peer=peers.get(room.roomId)??(room.getInvitedAndJoinedMemberCount()<=2?room.getDMInviter():undefined)??inferred;
-  const saved=/^(избранное|saved messages)$/i.test(room.name.trim())&&room.getJoinedMemberCount()<=1;
+  const saved=room.roomId===savedMessagesId(client);
   return {
     peer:saved?undefined:peer,
     avatar:{name:room.name,mxc:room.getMxcAvatarUrl()||(peer?userPresentation(client,room,peer).mxc:null),identity:room.roomId,saved},

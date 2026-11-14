@@ -1,5 +1,5 @@
 import {useEffect,useState} from 'react';
-import {EventType,type MatrixClient,type Room} from 'matrix-js-sdk';
+import {EventType,type MatrixClient,type MatrixEvent,type Room} from 'matrix-js-sdk';
 import {Avatar} from './Avatar';
 
 const gifHost='https://gifs.mango-kokos.ru';
@@ -12,7 +12,7 @@ const emojiGroups=[
 type Gif={id:string;description:string;url:string;previewUrl:string};
 type GifPage={query:string;items:Gif[];next?:string;error?:boolean};
 type Sticker={name:string;url:string;pack?:Record<string,unknown>;info:{mimetype?:string;w?:number;h?:number;size?:number}};
-type Pack={name:string;stickers:Sticker[]};
+type Pack={name:string;stickers:Sticker[];descriptor:boolean};
 
 function proxyMedia(value:unknown):string|null{
  if(typeof value!=='string')return null;
@@ -23,11 +23,13 @@ function proxyMedia(value:unknown):string|null{
  return null;
 }
 
-function stickerPacks(client:MatrixClient,room:Room){
+function stickerPacks(client:MatrixClient,room:Room,selected?:MatrixEvent){
  const account=(event:string)=>client.getAccountData(event as EventType.Direct)?.getContent();
  const roomEvents=(candidate:Room)=>candidate.currentState.getStateEvents('im.ponies.room_emotes');
  const linked=account('im.ponies.emote_rooms')?.rooms??{};
+ const descriptor=selected?.getContent()['ru.mangokokos.larpgram.pack'];
  const packs=[
+  ...(descriptor?[{value:descriptor,name:'Набор стикеров'}]:[]),
   {value:account('im.ponies.user_emotes'),name:'Мои стикеры'},
   ...(Array.isArray(account('ru.mangokokos.larpgram.packs')?.packs)?account('ru.mangokokos.larpgram.packs')!.packs:[]).map((value:unknown)=>({value,name:'Сохранённые'})),
   ...roomEvents(room).map(event=>({value:event.getContent(),name:room.name})),
@@ -44,19 +46,21 @@ function stickerPacks(client:MatrixClient,room:Room){
    if(!image||typeof image.url!=='string'||!/^mxc:\/\/[^/]+\/[^/]+$/.test(image.url)||Array.isArray(usage)&&!usage.includes('sticker'))return [];
    return [{name:typeof image.body==='string'&&image.body?image.body:shortcode,url:image.url,info:image.info??{},pack:typeof value.slug==='string'&&value.slug?value:undefined}];
   });
-  return stickers.length?[{name:typeof value.pack?.display_name==='string'?value.pack.display_name:name,stickers}]:[];
+  return stickers.length?[{name:typeof value.pack?.display_name==='string'?value.pack.display_name:name,stickers,descriptor:value===descriptor}]:[];
  });
 }
 
-export function ComposerMedia({client,room,insertEmoji,stageFile,busy,sendSticker,close}:{client:MatrixClient;room:Room;insertEmoji:(emoji:string)=>void;stageFile:(file:File)=>void;busy:boolean;sendSticker:(sticker:Sticker)=>void;close:()=>void}){
- const [tab,setTab]=useState<'emoji'|'sticker'|'gif'>('emoji');
+export function ComposerMedia({client,room,insertEmoji,stageFile,busy,sendSticker,close,selectedSticker}:{selectedSticker?:MatrixEvent;client:MatrixClient;room:Room;insertEmoji:(emoji:string)=>void;stageFile:(file:File)=>void;busy:boolean;sendSticker:(sticker:Sticker)=>void;close:()=>void}){
+ const [tab,setTab]=useState<'emoji'|'sticker'|'gif'>(selectedSticker?'sticker':'emoji');
  const [query,setQuery]=useState('');
  const [page,setPage]=useState<GifPage|null>(null);
  const [request,setRequest]=useState<{attempt:number;cursor?:string}>({attempt:0});
  const [selecting,setSelecting]=useState(false);
  const [downloadError,setDownloadError]=useState(false);
- const [packIndex,setPackIndex]=useState(0);
- const packs=tab==='sticker'?stickerPacks(client,room):[];
+ const [packIndex,setPackIndex]=useState<number|null>(null);
+ const packs=tab==='sticker'?stickerPacks(client,room,selectedSticker):[];
+ const selectedUrl=selectedSticker?.getContent().file?.url??selectedSticker?.getContent().url;
+ const selectedPack=packs.find(item=>item.descriptor)??packs.find(item=>item.stickers.some(sticker=>sticker.url===selectedUrl));
  const term=query.trim();
  useEffect(()=>{
   if(tab!=='gif')return;
@@ -94,12 +98,12 @@ export function ComposerMedia({client,room,insertEmoji,stageFile,busy,sendSticke
   finally{setSelecting(false)}
  }
  const matches=page?.query===term?page:null;
- const pack=packs[packIndex]??packs[0];
+ const pack=packIndex!==null?packs[packIndex]??packs[0]:selectedSticker?selectedPack:packs[0];
 
  return <section className="composer-media glass" aria-label="Медиапанель" onKeyDown={event=>{if(event.key==='Escape'){event.stopPropagation();close()}}}>
   <div className="room-detail-actions" aria-label="Тип вложения">
    {([['emoji','Эмодзи'],['sticker','Стикеры'],['gif','GIF']] as const).map(([value,label])=>
-    <button type="button" key={value} aria-pressed={tab===value} onClick={()=>{setTab(value);setQuery('');setRequest({attempt:0});setPage(null)}}>{label}</button>)}
+    <button type="button" key={value} aria-pressed={tab===value} onClick={()=>{setTab(value);if(value==='sticker'&&selectedSticker&&!selectedPack)setPackIndex(0);setQuery('');setRequest({attempt:0});setPage(null)}}>{label}</button>)}
   </div>
   {tab==='emoji'&&<div className="media-scroll">
    {emojiGroups.map(([name,values])=><section key={name}><h3>{name}</h3><div className="emoji-grid">
@@ -115,7 +119,7 @@ export function ComposerMedia({client,room,insertEmoji,stageFile,busy,sendSticke
       <Avatar name={item.name} mxc={item.url}/>
      </button>)}</div>
     {!pack.stickers.some(item=>item.name.toLocaleLowerCase().includes(term.toLocaleLowerCase()))&&<p>Стикеры не найдены</p>}
-   </>:<p>Нет доступных наборов стикеров</p>}
+   </>:<p>{selectedSticker?'Набор этого стикера недоступен':'Нет доступных наборов стикеров'}</p>}
   </div>}
   {tab==='gif'&&<div className="media-scroll">
    <input type="search" aria-label="Поиск GIF" placeholder="Поиск GIF" maxLength={100} value={query} onChange={event=>{setQuery(event.target.value);setRequest({attempt:0})}}/>

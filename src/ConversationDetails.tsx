@@ -1,3 +1,4 @@
+import {Button,IconButton} from './Controls';
 import {useEffect,useLayoutEffect,useRef,useState,type ReactNode,type CSSProperties} from 'react';
 import {EventType,type MatrixClient,type MatrixEvent,type Room} from 'matrix-js-sdk';
 import {Attachment} from './Attachment';
@@ -87,21 +88,20 @@ export function ConversationDetails({room,client,target,avatar,close,openUser,ju
     onKeyDown={event=>{if(event.key==='Escape'&&!event.defaultPrevented){event.stopPropagation();close()}}}>
     <header><h2>{profile?'Профиль':channel?'О канале':'О чате'}</h2><button ref={closeButton} type="button" className="icon-button" aria-label="Закрыть панель" onClick={close}><Icon name="close"/></button></header>
     <div className="details-identity"><Avatar {...(profile??avatar)}/><h3>{profile?.name??room.name}</h3>
-      {userId?<CopyId key={userId} id={userId} label={userHandle(userId)}/>:<small>{memberCountLabel(room)}</small>}
+      {userId?<CopyId key={userId} id={userId} label={userHandle(userId)}/>:!avatar.saved&&<small>{memberCountLabel(room)}</small>}
     </div>
     {userId?<><div className="profile-tiles">
-      {userId!==client.getUserId()&&<button type="button" onClick={()=>openDirect(userId)}><Icon name="chat"/>Чат</button>}
-      {direct&&<><button type="button" onClick={()=>startCall(false)}><Icon name="phone"/>Звонок</button>
-      <button type="button" onClick={()=>startCall(true)}><Icon name="camera"/>Видео</button>
-      <button type="button" disabled={busy} onClick={toggleMute}><Icon name={muted?'bell':'mute'}/>{muted?'Включить звук':'Без звука'}</button></>}
+      {userId!==client.getUserId()&&<Button variant="plain" onClick={()=>openDirect(userId)}><Icon name="chatSolid"/>Чат</Button>}
+      {direct&&<><Button variant="plain" onClick={()=>startCall(false)}><Icon name="phoneSolid"/>Звонок</Button>
+      <Button variant="plain" onClick={()=>startCall(true)}><Icon name="videoSolid"/>Видео</Button>
+      <Button variant="plain" disabled={busy} onClick={toggleMute}><Icon name={muted?'bellSolid':'muteSolid'}/>{muted?'Включить звук':'Без звука'}</Button></>}
     </div>
-    {userId!==client.getUserId()&&<details className="profile-more">
-      <summary><Icon name="settings"/>Действия</summary>
+    {userId!==client.getUserId()&&<section className="details-room-settings" aria-label="Действия с чатом">
       <div className="room-detail-actions">
       {direct&&actions}
       <button type="button" className="danger-action" disabled={busy} onClick={()=>blockDialog.current?.showModal()}><Icon name="ban"/>{blocked?'Разблокировать':'Заблокировать'}</button>
       </div>
-    </details>}
+    </section>}
     <dialog ref={blockDialog} className="message-dialog" onKeyDown={event=>event.stopPropagation()}>
       <form method="dialog"><h3>{blocked?'Разблокировать':'Заблокировать'} {profile?.name}?</h3>
       {!blocked&&<p>Сообщения этого пользователя будут скрыты во всех чатах.</p>}
@@ -109,14 +109,14 @@ export function ConversationDetails({room,client,target,avatar,close,openUser,ju
       <button onClick={()=>changeBlock(userId,!blocked)}>{blocked?'Разблокировать':'Заблокировать'}</button></div></form>
     </dialog></>:<>
       {typeof topic==='string'&&topic&&<p className="details-topic">{topic}</p>}
-      {actions&&<details className="details-room-settings"><summary><Icon name="settings"/>Настройки чата</summary>{actions}</details>}
+      {actions&&<section className="details-room-settings" aria-label="Настройки чата">{actions}</section>}
       {Array.isArray(pins)&&pins.length>0&&<details><summary>Закрепы · {pins.length}</summary><ul>
         {pins.filter((id):id is string=>typeof id==='string').map(id=>{
           const event=room.findEventById(id);
           return <li key={id}><button type="button" onClick={()=>jump(id)}>{event?describe(event):'Перейти к сообщению'}</button></li>;
         })}
       </ul></details>}
-      {!channel&&<details><summary>Участники · {room.getJoinedMemberCount()}</summary><ul>
+      {!channel&&!avatar.saved&&<details><summary>Участники · {room.getJoinedMemberCount()}</summary><ul>
         {room.getJoinedMembers().map(member=><li key={member.userId}>
           <button type="button" className="person-row" onClick={()=>openUser(member.userId)}>
             <Avatar {...userPresentation(client,room,member.userId)}/><span><strong>{member.name}</strong><small>{member.userId}</small></span>
@@ -144,7 +144,7 @@ export function ConversationDetails({room,client,target,avatar,close,openUser,ju
             const go=id?()=>jump(id):undefined;
             return <article key={id}>
               {activeTab==='links'?<><div className="gallery-links">{messageLinks(event).map(url=><a key={url} href={url} target="_blank" rel="noreferrer">{url}</a>)}</div>
-                {go&&<button type="button" className="icon-button" aria-label="К сообщению" title="К сообщению" onClick={go}><Icon name="chat"/></button>}</>:
+                {go&&<IconButton icon="chat" type="button" label="К сообщению" title="К сообщению" onClick={go}/>}</>:
                 <Attachment event={event} client={client} gallery jump={go} sender={event.getSender()?userPresentation(client,room,event.getSender()!).name:undefined}/>}
             </article>;
           })}

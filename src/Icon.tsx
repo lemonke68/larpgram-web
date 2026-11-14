@@ -1,47 +1,10 @@
-const paths = {
-  ban: 'M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0ZM6 6l12 12',
-  photo: 'M3 7h4l2-3h6l2 3h4v13H3zM16 13a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z',
-  chevron: 'm9 5 7 7-7 7',
-  shield: 'M12 3 4 6v5c0 5 3 8 8 10 5-2 8-5 8-10V6z',
-  devices: 'M2 4h15v11H2zm4 15h7m6-10h3v12h-5v-6',
-  bell: 'M4 17h16l-2-3V9a6 6 0 0 0-12 0v5l-2 3Zm6 3h4',
-  archive: 'M3 4h18v5H3zM5 9v11h14V9m-9 5h4',
-  check: 'm5 12 4 4L19 6',
-  checks: 'm2 12 4 4L16 6m-6 9 1 1L21 6',
-  reply: 'm9 5-6 6 6 6v-4h5c4 0 6 2 7 5 0-7-2-9-7-9H9z',
-  forward: 'm15 5 6 6-6 6v-4h-5c-4 0-6 2-7 5 0-7 2-9 7-9h5z',
-  copy: 'M8 8h12v12H8zM15 4H4v11',
-  edit: 'm4 16-1 5 5-1L21 7l-4-4L4 16Zm10-10 4 4',
-  trash: 'M4 6h16M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7m4-7v7',
-  play: 'm8 5 12 7-12 7z',
-  pause: 'M9 5v14m6-14v14',
-  image: 'M3 4h18v16H3zM3 17l5-6 4 4 3-3 6 6M16 8h.1',
-  download: 'M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5',
-  file: 'M5 3h9l5 5v13H5zM14 3v5h5',
-  music: 'M9 18V6l11-3v12M9 18a3 2 0 1 0-6 0 3 2 0 1 0 6 0Zm11-3a3 2 0 1 0-6 0 3 2 0 1 0 6 0Z',
-  chat: 'M4 4h16v12H9l-5 4z',
-  retry: 'M20 8a8 8 0 1 0 0 8M20 3v5h-5',
-  link: 'm10 14 4-4m-7 7-1 1a4 4 0 0 1-6-6l5-5a4 4 0 0 1 6 0m2 10a4 4 0 0 0 6 0l5-5a4 4 0 0 0-6-6l-1 1',
-  minimize: 'M5 12h14',
-  maximize: 'M9 4H4v5m11-5h5v5M4 15v5h5m11-5v5h-5',
-  hangup: 'M3 15v-4c5-4 13-4 18 0v4h-5v-3a12 12 0 0 0-8 0v3z',
-  plus: 'M12 5v14M5 12h14',
-  settings: 'M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8ZM12 2v3m0 14v3M2 12h3m14 0h3M5 5l2 2m10 10 2 2M5 19l2-2M17 7l2-2',
-  search: 'M16 10a6 6 0 1 1-12 0 6 6 0 0 1 12 0Zm-2 4 5 5',
-  down: 'M12 4v15m-6-6 6 6 6-6',
-  phone: 'M7 3H4a1 1 0 0 0-1 1c0 9 8 17 17 17a1 1 0 0 0 1-1v-3l-5-2-2 2a13 13 0 0 1-7-7l2-2-2-5Z',
-  camera: 'M3 6h12v12H3zM15 10l6-3v10l-6-3',
-  clip: 'm8 13 6-6a2 2 0 1 1 3 3l-8 8a4 4 0 0 1-6-6l9-9',
-  send: 'm3 4 18 8-18 8 3-8-3-8Zm3 8h15',
-  mic: 'M9 5a3 3 0 0 1 6 0v6a3 3 0 0 1-6 0V5Zm-4 6a7 7 0 0 0 14 0m-7 7v4m-3 0h6',
-  close: 'm6 6 12 12M18 6 6 18',
-  mute: 'M3 9h4l5-4v14l-5-4H3zm13 1 5 5m0-5-5 5',
-  bookmark: 'M6 3h12v18l-6-4-6 4V3Z',
-  videoNote: 'M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0ZM7 9h7v6H7zM14 11l3-2v6l-3-2',
-  emoji: 'M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0ZM8 14a4 4 0 0 0 8 0M8 9h.1M16 9h.1',
-  pin: 'm9 3 12 12-3 1-4-2-4 4-4-4 4-4-2-4 1-3ZM8 16l-5 5',
-  stop: 'M6 6h12v12H6z',
-};
-export function Icon({name}:{name:keyof typeof paths}){
-  return <svg aria-hidden="true" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d={paths[name]}/></svg>;
+import type {SVGProps} from "react";
+import catalogue from './androidIcons.json';
+
+export type IconName=keyof typeof catalogue;
+export function Icon({name,size=24}:{name:IconName;size?:number}){
+ const icon=catalogue[name];
+ return <svg aria-hidden="true" focusable="false" width={size} height={size} viewBox={icon.viewBox} className={'mirror' in icon&&icon.mirror?'android-mirror':undefined}>
+  {icon.nodes.map((path,index)=><path key={index} {...path as SVGProps<SVGPathElement>}/>)}
+ </svg>;
 }
